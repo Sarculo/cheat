@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CHEAT_HOME="${CHEAT_HOME:-$HOME/.cheat}"
+CHEAT_USER_DIR="${CHEAT_USER_DIR:-$CHEAT_HOME/notes}"
+CHEAT_UPSTREAM_DIR="${CHEAT_UPSTREAM_DIR:-$CHEAT_HOME/upstream}"
+EDITOR="${EDITOR:-nvim}"
+
+mkdir -p "$CHEAT_USER_DIR" "$CHEAT_UPSTREAM_DIR"
+
+usage() {
+    echo "Usage:"
+    echo "  cheat <topic>        View note"
+    echo "  cheat -e <topic>     Edit user note"
+    echo "  cheat -l             List topics"
+    echo "  cheat -s <keyword>   Search notes"
+    echo "  cheat -i <topic>     View note in the current terminal"
+}
+
+note_path() {
+    local topic="$1"
+
+    if [ -f "$CHEAT_USER_DIR/$topic.md" ]; then
+        echo "$CHEAT_USER_DIR/$topic.md"
+    elif [ -f "$CHEAT_UPSTREAM_DIR/$topic.md" ]; then
+        echo "$CHEAT_UPSTREAM_DIR/$topic.md"
+    else
+        return 1
+    fi
+}
+
+list_topics() {
+    {
+        find "$CHEAT_UPSTREAM_DIR" -type f -name '*.md' 2>/dev/null
+        find "$CHEAT_USER_DIR" -type f -name '*.md' 2>/dev/null
+    } | sed -E \
+        -e "s|^$CHEAT_USER_DIR/||" \
+        -e "s|^$CHEAT_UPSTREAM_DIR/||" \
+        -e 's|\.md$||' \
+      | sort -u
+}
+
+view_note_inside() {
+    local topic="$1"
+    local file
+
+    if ! file="$(note_path "$topic")"; then
+        echo "No note found for: $topic"
+        echo "Create it with:"
+        echo "  cheat -e $topic"
+        exit 1
+    fi
+
+    if command -v glow >/dev/null 2>&1; then
+        glow "$file"
+    elif command -v bat >/dev/null 2>&1; then
+        bat --paging=always "$file"
+    else
+        less "$file"
+    fi
+}
+
+view_note() {
+    local topic="$1"
+    local file
+
+    if ! file="$(note_path "$topic")"; then
+        echo "No note found for: $topic"
+        echo "Create it with:"
+        echo "  cheat -e $topic"
+        exit 1
+    fi
+
+    if ! command -v glow >/dev/null 2>&1; then
+        echo "Missing dependency: glow is not installed."
+        exit 1
+    fi
+
+    glow -p "$file"
+}
+
+edit_note() {
+    local topic="$1"
+    "$EDITOR" "$CHEAT_USER_DIR/$topic.md"
+}
+
+search_notes() {
+    local keyword="$1"
+
+    if command -v rg >/dev/null 2>&1; then
+        rg -n --heading "$keyword" "$CHEAT_USER_DIR" "$CHEAT_UPSTREAM_DIR"
+    else
+        grep -RIn "$keyword" "$CHEAT_USER_DIR" "$CHEAT_UPSTREAM_DIR"
+    fi
+}
+
+case "$1" in
+    ""|-h|--help)
+        usage
+        echo
+        echo "Available topics:"
+        list_topics
+        ;;
+
+    -l|--list)
+        list_topics
+        ;;
+
+    -e|--edit)
+        [ -z "$2" ] && usage && exit 1
+        edit_note "$2"
+        ;;
+
+    -s|--search)
+        [ -z "$2" ] && usage && exit 1
+        search_notes "$2"
+        ;;
+
+    -w|--window)
+        [ -z "$2" ] && usage && exit 1
+        view_note "$2"
+        ;;
+
+    -i|--inside)
+	[ -z "$2" ] && usage && exit 1
+	view_note_inside "$2"
+	;;
+	
+    *)
+        view_note "$1"
+        ;;
+
+esac
+
